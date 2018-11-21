@@ -1,6 +1,13 @@
 from clang.cindex import *
-import sys
 from py2neo import *
+
+#########################################################################
+#                                                                       #
+#       Global Definitions                                              #
+#                                                                       #
+#########################################################################
+
+POINTER_SIZE = {'x32': 4, 'x64': 8}
 
 #########################################################################
 #                                                                       #
@@ -8,11 +15,12 @@ from py2neo import *
 #                                                                       #
 #########################################################################
 
-# Create a session with the started local Neo4j DB, using the password 'user'. for more info on param search for py2neo.Graph()
+# Create a session with the started local Neo4j DB, using the password 'user'. for more info on param search for
+# py2neo.Graph()
 graph = Graph(password='user')                  
 
 # uncomment this line to delete the graph before each run of the script (good for testing purposes)
-# graph.delete_all()                    
+graph.delete_all()
 
 
 #########################################################################
@@ -150,7 +158,8 @@ def handle_function_proto(type, parent_node, relationship):
     args = {
         'name': type.spelling,
         'type_name': 'Function_ProtoType',
-        'Size': type.get_size()
+        'Size': POINTER_SIZE['x64'],
+        'function_argument_list': [str(i.spelling) for i in type.argument_types()]
     }
 
     current_node = merge_node(parent_node, relationship, str(type.kind).split('.')[1], **args)
@@ -158,7 +167,7 @@ def handle_function_proto(type, parent_node, relationship):
     type_handles[type.get_result().kind](type.get_result(), current_node, 'Return_Type')
 
     for argument in type.argument_types():
-        type_handles[argument.kind](argument, current_node, 'Function_Parameter')
+        type_handles[argument.kind](argument, current_node, 'Function_Argument')
 
 
 #########################################################################
@@ -264,7 +273,8 @@ def cursor_handle_function_decl(cursor, parent_node, relationship):
 
     args = {
         'name': cursor.spelling,
-        'type_name': cursor.type.spelling
+        'type_name': cursor.type.spelling,
+        'function_argument_list': [str(i.spelling) for i in cursor.get_arguments()]
     }
 
     current_node = merge_node(parent_node, relationship, str(cursor.kind).split('.')[1], **args)
@@ -272,7 +282,8 @@ def cursor_handle_function_decl(cursor, parent_node, relationship):
     type_handles[cursor.result_type.kind](cursor.result_type, current_node, 'Return_Type')
 
     for arg in cursor.get_arguments():
-        cursor_handles[arg.kind](arg, current_node, 'Function_Parameter')
+        cursor_handles[arg.kind](arg, current_node, 'Function_Argument')
+
 
 
 #########################################################################

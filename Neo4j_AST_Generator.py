@@ -8,9 +8,11 @@ from py2neo import *
 #                                                                       #
 #########################################################################
 
-graph = Graph(password='user')
+# Create a session with the started local Neo4j DB, using the password 'user'. for more info on param search for py2neo.Graph()
+graph = Graph(password='user')                  
 
-graph.delete_all()
+# uncomment this line to delete the graph before each run of the script (good for testing purposes)
+# graph.delete_all()                    
 
 
 #########################################################################
@@ -20,6 +22,7 @@ graph.delete_all()
 #########################################################################
 
 def is_recursive_definition(node):
+    """ Search for a circular definition of a type """
     relationship_count = graph.run('MATCH path = (n)-[r*]->(n) where n.name = {NAME} AND n.type_name = {TYPE_NAME} '
                                    'RETURN '
                                    'size(relationships(path))', NAME=node['name'], TYPE_NAME=node['type_name'])
@@ -30,6 +33,7 @@ def is_recursive_definition(node):
 #########################################################################
 
 def merge_node(parent_node, relationship, node_label, **kwargs):
+    """ Create the actual node\relationship in the Neo4j graph """
     if kwargs['name'] == None:
         kwargs['name'] = 'None'
 
@@ -50,6 +54,13 @@ def merge_node(parent_node, relationship, node_label, **kwargs):
 #       TYPE HANDLING FUNCTIONS                                         #
 #                                                                       #
 #########################################################################
+
+""" 
+Each type handler deals with a specific clang AST type
+:param type: clang.cindex.Type object
+:param parent_node: py2neo.Node object , represents the parent of the current type node
+:param relationship: str , determines the relationship label of the neo2py.Relationship object that will be created
+""" 
 
 def handle_base_type(type, parent_node, relationship):
     args = {
@@ -182,6 +193,12 @@ def handle_incomplete_array(type, parent_node, relationship):
 #                                                                       #
 #########################################################################
 
+""" 
+Each cursor handler deals with a specific clang AST type
+:param type: clang.cindex.Cursor object
+:param parent_node: py2neo.Node object , represents the parent of the current type node
+:param relationship: str , determines the relationship label of the neo2py.Relationship object that will be created
+""" 
 
 def cursor_handle_typedef_decl(cursor, parent_node, relationship):
     assert cursor.kind == CursorKind.TYPEDEF_DECL
@@ -332,6 +349,9 @@ def cursor_handle_enum_decl(cursor, parent_node, relationship):
         merge_node(current_node, 'ENUM_Definition', str(enum_member.kind).split('.')[1], **args)
 
 
+       
+#########################################################################
+#               Handler function pointers                               #
 #########################################################################
 
 type_handles = {
@@ -407,22 +427,21 @@ cursor_handles = {
 #########################################################################
 
 def main():
-    windows_header_file = '/home/user/Desktop/Windows headers/10.0.17763.0/um/Windows.h'
-
-    Config.set_library_file('/usr/lib/llvm-6.0/lib/libclang.so.1')
+    header_file = '/home/user/Desktop/Windows headers/10.0.17763.0/um/Windows.h' # c header file to parse
+    Config.set_library_file('/usr/lib/llvm-6.0/lib/libclang.so.1')               # path to libclang.so file
 
     index = Index.create()
-    tu = index.parse(windows_header_file, args=["-xc-header", '--target=x86_64-pc-windows-gnu'])
+    tu = index.parse(header_file, args=["-xc-header", '--target=x86_64-pc-windows-gnu'])  # args for clang parser
     if not tu:
         print("unable to load input")
 
     node = tu.cursor
 
-    parent_node = Node('Translation_Unit', name=node.spelling, type_name='TU')
+    parent_node = Node('Translation_Unit', name=node.spelling, type_name='TU')            # root node of the tree
     graph.create(parent_node)
 
-    for c in node.get_children():
-        cursor_handles[c.kind](c, parent_node, 'Top_Level_Declaration')
+    for c in node.get_children():                                                         # iterate all declaration in the header and parse
+        cursor_handles[c.kind](c, parent_node, 'Top_Level_Declaration')                 
 
 
 if __name__ == '__main__':

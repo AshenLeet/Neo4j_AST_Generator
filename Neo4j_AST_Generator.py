@@ -3,6 +3,14 @@ from py2neo import *
 
 #########################################################################
 #                                                                       #
+#       Global Definitions                                              #
+#                                                                       #
+#########################################################################
+
+POINTER_SIZE = {'x32': 4, 'x64': 8}
+
+#########################################################################
+#                                                                       #
 #       Neo4j DB session creation                                       #
 #                                                                       #
 #########################################################################
@@ -150,7 +158,7 @@ def handle_function_proto(type, parent_node, relationship):
     args = {
         'name': type.spelling,
         'type_name': 'Function_ProtoType',
-        'Size': type.get_size(),
+        'Size': POINTER_SIZE['x64'],
         'function_argument_list': [str(i.spelling) for i in type.argument_types()]
     }
 

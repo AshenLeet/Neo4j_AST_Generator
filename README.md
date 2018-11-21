@@ -6,5 +6,11 @@ A simple script utilizing libclang's python bindings in order to parse the windo
   - Clang
   - Neo4j DB
   
- 
- 
+
+ # Screenshot
+
+Analysis of the STRCPY function. 
+Each node contains information like the name of the parameter, number of arguments, size of each type.
+
+ ![STRCPY function](strcpy.png)
+

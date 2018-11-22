@@ -17,10 +17,11 @@ POINTER_SIZE = {'x32': 4, 'x64': 8}
 
 # Create a session with the started local Neo4j DB, using the password 'user'. for more info on param search for
 # py2neo.Graph()
-graph = Graph(password='user')                  
+graph = Graph(password='user')
+
 
 # uncomment this line to delete the graph before each run of the script (good for testing purposes)
-graph.delete_all()
+# graph.delete_all()
 
 
 #########################################################################
@@ -68,7 +69,8 @@ Each type handler deals with a specific clang AST type
 :param type: clang.cindex.Type object
 :param parent_node: py2neo.Node object , represents the parent of the current type node
 :param relationship: str , determines the relationship label of the neo2py.Relationship object that will be created
-""" 
+"""
+
 
 def handle_base_type(type, parent_node, relationship):
     args = {
@@ -76,6 +78,9 @@ def handle_base_type(type, parent_node, relationship):
         'type_name': str(type.kind).split('.')[1],
         'Size': type.get_size()
     }
+
+    if type.spelling == 'VOID':
+        args['Size'] = None
     merge_node(parent_node, relationship, 'Base_Type', **args)
 
 
@@ -172,6 +177,22 @@ def handle_function_proto(type, parent_node, relationship):
 
 #########################################################################
 
+def handle_function_no_proto(type, parent_node, relationship):
+    assert type.kind == TypeKind.FUNCTIONNOPROTO
+
+    args = {
+        'name': type.spelling,
+        'type_name': 'Function_No_ProtoType',
+        'Size': POINTER_SIZE['x64'],
+    }
+
+    current_node = merge_node(parent_node, relationship, str(type.kind).split('.')[1], **args)
+
+    type_handles[type.get_result().kind](type.get_result(), current_node, 'Return_Type')
+
+
+#########################################################################
+
 def handle_elaborated(type, parent_node, relationship):
     assert type.kind == TypeKind.ELABORATED
 
@@ -207,7 +228,8 @@ Each cursor handler deals with a specific clang AST type
 :param type: clang.cindex.Cursor object
 :param parent_node: py2neo.Node object , represents the parent of the current type node
 :param relationship: str , determines the relationship label of the neo2py.Relationship object that will be created
-""" 
+"""
+
 
 def cursor_handle_typedef_decl(cursor, parent_node, relationship):
     assert cursor.kind == CursorKind.TYPEDEF_DECL
@@ -285,14 +307,18 @@ def cursor_handle_function_decl(cursor, parent_node, relationship):
         cursor_handles[arg.kind](arg, current_node, 'Function_Argument')
 
 
-
 #########################################################################
 
 def cursor_handle_union_decl(cursor, parent_node, relationship):
     assert cursor.kind == CursorKind.UNION_DECL
 
+    if str(cursor.type.spelling).startswith('_'):
+        name = cursor.type.spelling
+    else:
+        name = str(cursor.type.spelling).split()[1].split(":")[0]
+
     args = {
-        'name': str(cursor.type.spelling).split()[1].split(":")[0],
+        'name': name,
         'type_name': cursor.type.spelling
     }
 
@@ -360,7 +386,6 @@ def cursor_handle_enum_decl(cursor, parent_node, relationship):
         merge_node(current_node, 'ENUM_Definition', str(enum_member.kind).split('.')[1], **args)
 
 
-       
 #########################################################################
 #               Handler function pointers                               #
 #########################################################################
@@ -397,7 +422,7 @@ type_handles = {
     # TypeKind.OBJCCLASS
     # TypeKind.OBJCSEL
     TypeKind.FLOAT128: handle_base_type,
-    # TypeKind.COMPLEX
+    TypeKind.COMPLEX: handle_base_type,
     TypeKind.POINTER: handle_pointer,
     # TypeKind.BLOCKPOINTER
     # TypeKind.LVALUEREFERENCE
@@ -407,7 +432,7 @@ type_handles = {
     TypeKind.TYPEDEF: handle_typedef,
     # TypeKind.OBJCINTERFACE
     # TypeKind.OBJCOBJECTPOINTER
-    # TypeKind.FUNCTIONNOPROTO
+    TypeKind.FUNCTIONNOPROTO: handle_function_no_proto,
     TypeKind.FUNCTIONPROTO: handle_function_proto,
     TypeKind.CONSTANTARRAY: handle_constant_array,
     # TypeKind.VECTOR
@@ -438,21 +463,28 @@ cursor_handles = {
 #########################################################################
 
 def main():
-    header_file = '/home/user/Desktop/Windows headers/10.0.17763.0/um/Windows.h' # c header file to parse
-    Config.set_library_file('/usr/lib/llvm-6.0/lib/libclang.so.1')               # path to libclang.so file
+    Config.set_library_file('/usr/lib/llvm-6.0/lib/libclang.so.1')  # path to libclang.so file
 
-    index = Index.create()
-    tu = index.parse(header_file, args=["-xc-header", '--target=x86_64-pc-windows-gnu'])  # args for clang parser
-    if not tu:
-        print("unable to load input")
+    for line in open('/home/user/Desktop/Windows headers/10.0.17763.0/a.txt', 'r').read().split('\n'):
+        if not line:
+            continue
 
-    node = tu.cursor
+        header_file = '/home/user/Desktop/Windows headers/10.0.17763.0/shared/' + line  # c header file to parse
 
-    parent_node = Node('Translation_Unit', name=node.spelling, type_name='TU')            # root node of the tree
-    graph.create(parent_node)
+        print(header_file)
 
-    for c in node.get_children():                                                         # iterate all declaration in the header and parse
-        cursor_handles[c.kind](c, parent_node, 'Top_Level_Declaration')                 
+        index = Index.create()
+        tu = index.parse(header_file, args=["-xc-header", '--target=x86_64-pc-windows-gnu'])  # args for clang parser
+        if not tu:
+            print("unable to load input")
+
+        node = tu.cursor
+
+        parent_node = Node('Translation_Unit', name=node.spelling, type_name='TU')  # root node of the tree
+        graph.create(parent_node)
+
+        for c in node.get_children():  # iterate all declaration in the header and parse
+            cursor_handles[c.kind](c, parent_node, 'Top_Level_Declaration')
 
 
 if __name__ == '__main__':
